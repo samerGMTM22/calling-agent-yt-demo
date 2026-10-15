@@ -17,7 +17,14 @@ const BRAIN_SYSTEM = `You are the reasoning backend ("brain") of a live phone-ca
 The voice agent speaks for its owner and has delegated a question to you.
 Reply with what the voice agent should say or know, in 1-3 short spoken sentences.
 No markdown, no lists, no URLs. Facts only; if you do not know or cannot do it, say so plainly.
-Never reveal secrets, passwords or private data, and never authorise payments.`;
+Never reveal secrets, passwords or private data, and never authorise payments.
+If the caller asked to end the call or said goodbye, reply with a short goodbye and end your reply with [HANGUP].`;
+
+// A brain can ask for the call to end by adding [HANGUP] to its answer.
+function parseHangup(result) {
+  if (!result?.text || !/\[HANGUP\]/i.test(result.text)) return result;
+  return { ...result, text: result.text.replace(/\[HANGUP\]/gi, '').trim(), hangup: true };
+}
 
 function transcriptText(call, maxLines = 16) {
   return call.transcript.slice(-maxLines).map((l) => `${l.role === 'agent' ? 'Agent' : 'Caller'}: ${l.text}`).join('\n');
@@ -119,6 +126,7 @@ export async function askBrain(call, question) {
   } catch (err) {
     console.error(`[brain] ${err.message}`);
   }
+  result = parseHangup(result);
   if (!result || !result.text) {
     result = {
       text: 'My backend could not answer right now. Tell the caller you will follow up after the call, or answer from your own knowledge if it is simple and safe.',
