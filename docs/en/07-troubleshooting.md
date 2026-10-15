@@ -11,6 +11,11 @@ Start with `npm run doctor`. It checks every step and prints the fix.
 | "This is a trial account…" message | Normal on trial. Press any key, or upgrade the account. |
 | Call connects, then silence and hangs up | Server not reachable: is `npm run up` running? Does `npm run status` show a public URL? Is the number's webhook the **current** ngrok URL (`npm run twilio:connect`)? |
 | Your own call is rejected | Your number in `.env` must match exactly in E.164 (`+9715…`, no spaces or leading zeros). Check `npm run status`. If your number uses a Twilio Function gate, add the number there too. |
+| `401 missing or wrong control token` | Run `npm run` commands from the project folder while `npm run up` is running. The token in `data/control-token` changes at each server start. |
+| "Please enter your PIN" and then "Goodbye" | Wrong PIN 3 times, or no digits within 10 seconds. Check `INBOUND_PIN` in `.env` (4–10 digits only) and restart. |
+| The agent says goodbye but doesn't hang up | In `BRAIN_MODE=agent` the brain must answer the goodbye question with `--hangup`; otherwise the fallback does it after `BRAIN_TIMEOUT_SECONDS`. Or just hang up your phone. |
+| Persona changes are ignored | `persona.md` must be in the project folder (or set `PERSONA_FILE`). `npm run doctor` shows whether it's found. `.env` changes need a restart. |
+| Server warns "ngrok address contains your public IP" | Expected with random free URLs. Hide it on screen, or set `NGROK_DOMAIN` (Step 3.4). |
 | `No public URL` | Start ngrok (`npm run up` does it) or set `PUBLIC_URL`. |
 | ngrok `ERR_NGROK_4018` | Add your authtoken: `ngrok config add-authtoken …` |
 | OpenAI `401` | Wrong or deleted key. Create a new one. |

@@ -54,6 +54,8 @@ export const config = {
   ownerPhone,
   allowedCallers,
   allowedDestinations: phoneList('ALLOWED_DESTINATIONS', allowedCallers),
+  inboundPin: clean('INBOUND_PIN'),
+  personaFile: clean('PERSONA_FILE') || 'persona.md',
   agentLanguage: (clean('AGENT_LANGUAGE') || 'auto').toLowerCase(),
 
   voiceEngine: (clean('VOICE_ENGINE') || 'live').toLowerCase(),
@@ -92,6 +94,7 @@ export function configProblems() {
   if (!['live', 'realtime'].includes(config.voiceEngine)) p.push('VOICE_ENGINE must be "live" or "realtime".');
   if (!['agent', 'openai', 'anthropic', 'none'].includes(config.brain.mode)) p.push('BRAIN_MODE must be agent, openai, anthropic or none.');
   if (config.brain.mode === 'anthropic' && !config.brain.anthropicApiKey) p.push('BRAIN_MODE=anthropic needs ANTHROPIC_API_KEY.');
+  if (config.inboundPin && !/^\d{4,10}$/.test(config.inboundPin)) p.push('INBOUND_PIN must be 4 to 10 digits (or empty to turn it off).');
   return p;
 }
 

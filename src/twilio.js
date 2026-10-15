@@ -55,6 +55,19 @@ export function rejectTwiml() {
   return '<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="rejected" /></Response>';
 }
 
+// Asks the caller to type INBOUND_PIN on the keypad; Twilio posts the digits to /twilio/pin.
+export function pinTwiml(baseUrl, digits, retry) {
+  const prompt = retry ? 'Wrong PIN. Please try again.' : 'Please enter your PIN.';
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="dtmf" numDigits="${digits}" timeout="10" action="${escapeXml(`${baseUrl}/twilio/pin`)}" method="POST">
+    <Say>${prompt}</Say>
+  </Gather>
+  <Say>Goodbye.</Say>
+  <Hangup />
+</Response>`;
+}
+
 export function sayAndHangupTwiml(text) {
   return `<?xml version="1.0" encoding="UTF-8"?><Response><Say>${escapeXml(text)}</Say><Hangup /></Response>`;
 }

@@ -46,7 +46,7 @@ The ngrok token is also a secret. It is stored in ngrok's own config file, not i
 
 ## 3.4 Optional: a free static domain (recommended)
 
-By default ngrok gives you a new random address every time, which means re-pointing Twilio after each restart. A free **static domain** fixes that:
+By default ngrok gives you a new random address every time, which means re-pointing Twilio after each restart. That random address can also **contain your home IP address** (for example `1a2b-203-0-113-10.ngrok-free.app`), so don't show it in videos or screenshots. A free **static domain** fixes both:
 
 1. ngrok dashboard → **Domains** (or **Universal Gateway → Domains**) → **+ New Domain / Create domain**.
 2. Copy it (e.g. `my-agent.ngrok-free.app`) into `.env`:

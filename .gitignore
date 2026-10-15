@@ -11,3 +11,6 @@ data/
 # Dependencies / OS
 node_modules/
 .DS_Store
+
+# Your private persona (persona.example.md is the shared template)
+persona.md

@@ -8,6 +8,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { client, ourNumber, publicUrl } from '../src/twilio.js';
+import { configProblems, maskPhone } from '../src/config.js';
+
+const problems = configProblems();
+if (problems.length) {
+  console.error('Fix .env first (npm run doctor shows how):');
+  for (const p of problems) console.error(`  - ${p}`);
+  process.exit(1);
+}
 
 const BACKUP = path.resolve('data', 'twilio-webhook-backup.json');
 const mode = process.argv.includes('--apply') ? 'apply' : process.argv.includes('--restore') ? 'restore' : 'show';
@@ -23,7 +31,7 @@ const current = {
   voiceApplicationSid: record.voiceApplicationSid || '',
   savedAt: new Date().toISOString(),
 };
-console.log(`Number:          ${record.phoneNumber}`);
+console.log(`Number:          ${maskPhone(record.phoneNumber)}`);
 console.log(`Current webhook: ${record.voiceUrl || '(none)'} [${record.voiceMethod}]${record.voiceApplicationSid ? ` | TwiML App ${record.voiceApplicationSid}` : ''}`);
 
 if (mode === 'show') {

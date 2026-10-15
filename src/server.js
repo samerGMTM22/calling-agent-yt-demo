@@ -1,13 +1,18 @@
 // Two servers in one process:
 //
 //  1. PUBLIC  (PORT, exposed through ngrok): only Twilio talks to it.
-//     POST /twilio/voice   incoming calls: caller allowlist, then TwiML to stream audio
+//     POST /twilio/voice   incoming calls: caller allowlist (+ optional PIN), then TwiML to stream audio
+//     POST /twilio/pin     keypad PIN check, when INBOUND_PIN is set
 //     POST /twilio/status  call status updates
 //     WS   /media-stream   live call audio <-> OpenAI voice engine
 //
 //  2. CONTROL (127.0.0.1:CONTROL_PORT, never exposed): the operator agent's API.
 //     Place calls, watch events, answer delegated questions, steer or end calls.
+//     Every request needs the per-run token in data/control-token; browsers are refused.
+import fs from 'node:fs';
 import http from 'node:http';
+import path from 'node:path';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { config, configProblems, configWarnings, maskPhone, normalizePhone } from './config.js';
 import {
@@ -15,13 +20,38 @@ import {
 } from './calls.js';
 import { answerQuestion, pendingQuestions } from './brain.js';
 import {
-  hangup, ourNumber, placeCall, publicUrl, rejectTwiml, sayAndHangupTwiml, streamTwiml, verifyWebhook,
+  hangup, ourNumber, pinTwiml, placeCall, publicUrl, rejectTwiml, sayAndHangupTwiml, streamTwiml, verifyWebhook,
 } from './twilio.js';
 import { createLiveEngine } from './engines/live.js';
 import { createRealtimeEngine } from './engines/realtime.js';
 
 const engines = new Map(); // callId -> engine
+const pinAttempts = new Map(); // Twilio CallSid -> wrong PIN attempts
 const BOOT_ID = Date.now().toString(36);
+
+// Per-run secret for the control API, readable only by your user account.
+// Blocks other web pages (CSRF) and anything that can't read your files.
+const CONTROL_TOKEN = randomBytes(24).toString('hex');
+const TOKEN_FILE = path.resolve('data', 'control-token');
+fs.mkdirSync(path.dirname(TOKEN_FILE), { recursive: true });
+fs.writeFileSync(TOKEN_FILE, CONTROL_TOKEN, { mode: 0o600 });
+fs.chmodSync(TOKEN_FILE, 0o600);
+
+function safeEqual(a, b) {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+// Twilio sends a handful of requests per call; anything far above that is abuse.
+let rateWindowStart = Date.now();
+let rateCount = 0;
+function rateLimited() {
+  const now = Date.now();
+  if (now - rateWindowStart > 60_000) { rateWindowStart = now; rateCount = 0; }
+  rateCount += 1;
+  return rateCount > 120;
+}
 
 function log(...args) {
   console.log(new Date().toISOString().slice(11, 19), ...args);
@@ -62,7 +92,8 @@ async function finishCall(call, reason) {
 
 // ---------------------------------------------------------------- public server
 
-async function handleTwilioVoice(req, res) {
+// Handles both the first webhook (/twilio/voice) and the PIN step (/twilio/pin).
+async function handleTwilioVoice(req, res, url) {
   const params = Object.fromEntries(new URLSearchParams(await readBody(req)));
   const proto = req.headers['x-forwarded-proto'] || 'https';
   const host = req.headers['x-forwarded-host'] || req.headers.host;
@@ -70,7 +101,7 @@ async function handleTwilioVoice(req, res) {
 
   const genuine = await verifyWebhook({ signature: req.headers['x-twilio-signature'], url: `${baseUrl}${req.url}`, params });
   if (!genuine) {
-    log('Blocked a /twilio/voice request that did not come from Twilio.');
+    log(`Blocked a ${url.pathname} request that did not come from Twilio.`);
     return reply(res, 403, 'forbidden', 'text/plain');
   }
 
@@ -80,6 +111,23 @@ async function handleTwilioVoice(req, res) {
     emit('call.rejected', { from: maskPhone(from), reason: 'not allowlisted' });
     return reply(res, 200, rejectTwiml(), 'text/xml');
   }
+
+  // Caller ID can be faked, so INBOUND_PIN adds something only you know.
+  if (url.pathname === '/twilio/pin') {
+    if (!config.inboundPin) return reply(res, 404, 'not found', 'text/plain');
+    const tries = (pinAttempts.get(params.CallSid) || 0) + 1;
+    pinAttempts.set(params.CallSid, tries);
+    setTimeout(() => pinAttempts.delete(params.CallSid), 10 * 60_000);
+    if (!safeEqual(params.Digits || '', config.inboundPin)) {
+      log(`Wrong PIN from ${maskPhone(from)} (attempt ${tries} of 3).`);
+      emit('call.rejected', { from: maskPhone(from), reason: 'wrong PIN' });
+      return reply(res, 200, tries >= 3 ? sayAndHangupTwiml('Goodbye.') : pinTwiml(baseUrl, config.inboundPin.length, true), 'text/xml');
+    }
+    pinAttempts.delete(params.CallSid);
+  } else if (config.inboundPin) {
+    return reply(res, 200, pinTwiml(baseUrl, config.inboundPin.length, false), 'text/xml');
+  }
+
   if (activeCalls().length >= config.maxConcurrentCalls) {
     return reply(res, 200, sayAndHangupTwiml('Sorry, the agent is busy on another call. Please try again later.'), 'text/xml');
   }
@@ -110,7 +158,8 @@ const publicServer = http.createServer(async (req, res) => {
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
       return reply(res, 200, { ok: true, service: 'calling-agent' });
     }
-    if (req.method === 'POST' && url.pathname === '/twilio/voice') return await handleTwilioVoice(req, res);
+    if (req.method === 'POST' && url.pathname.startsWith('/twilio/') && rateLimited()) return reply(res, 429, 'slow down', 'text/plain');
+    if (req.method === 'POST' && (url.pathname === '/twilio/voice' || url.pathname === '/twilio/pin')) return await handleTwilioVoice(req, res, url);
     if (req.method === 'POST' && url.pathname === '/twilio/status') return await handleTwilioStatus(req, res, url);
     reply(res, 404, 'not found', 'text/plain');
   } catch (err) {
@@ -120,7 +169,8 @@ const publicServer = http.createServer(async (req, res) => {
 });
 
 // Twilio media stream <-> voice engine
-const wss = new WebSocketServer({ noServer: true });
+// Twilio media frames are tiny (~20 ms of audio); cap message size to stop memory abuse.
+const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 publicServer.on('upgrade', (req, socket, head) => {
   if (new URL(req.url, 'http://localhost').pathname !== '/media-stream') return socket.destroy();
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws));
@@ -133,6 +183,8 @@ wss.on('connection', (twilioWs) => {
   let markCount = 0;
 
   const toTwilio = (msg) => { if (twilioWs.readyState === 1) twilioWs.send(JSON.stringify(msg)); };
+  // Without this, one oversized or malformed frame from anyone would crash the whole server.
+  twilioWs.on('error', (err) => log(`Media socket error: ${err.message}`));
   // Unauthenticated sockets get 5 seconds to present a valid token.
   const authTimer = setTimeout(() => { if (!engine) twilioWs.close(); }, 5000);
 
@@ -144,7 +196,7 @@ wss.on('connection', (twilioWs) => {
       const p = msg.start?.customParameters || {};
       const candidate = calls.get(p.callId);
       const valid = candidate && !candidate.endedAt && candidate.streamToken
-        && p.token === candidate.streamToken && Date.now() < candidate.streamTokenExpiresAt
+        && safeEqual(p.token || '', candidate.streamToken) && Date.now() < candidate.streamTokenExpiresAt
         && !engines.has(candidate.id);
       if (!valid) {
         log('Rejected a media stream with a missing/invalid token.');
@@ -281,6 +333,11 @@ const controlServer = http.createServer(async (req, res) => {
   // Only accept local requests addressed to localhost (blocks DNS-rebinding tricks).
   const host = (req.headers.host || '').split(':')[0];
   if (!['127.0.0.1', 'localhost'].includes(host)) return reply(res, 403, { error: 'local only' });
+  // Web pages always send an Origin header; the CLI never does. Refuse browsers outright.
+  if (req.headers.origin) return reply(res, 403, { error: 'browser requests are not allowed' });
+  if (!safeEqual(req.headers['x-control-token'] || '', CONTROL_TOKEN)) {
+    return reply(res, 401, { error: 'missing or wrong control token: use the npm run commands from the project folder' });
+  }
   try {
     await handleControl(req, res, new URL(req.url, 'http://localhost'));
   } catch (err) {
@@ -300,6 +357,7 @@ if (problems.length) {
 }
 if (config.allowedCallers.length === 0) log('warning: ALLOWED_CALLERS is empty → every inbound call will be rejected.');
 if (config.allowedDestinations.includes('*')) log('warning: ALLOWED_DESTINATIONS=* → the agent may call ANY number. Be careful.');
+if (!config.inboundPin && config.allowedCallers.length) log('tip: set INBOUND_PIN in .env so a faked caller ID alone cannot reach your agent.');
 
 publicServer.listen(config.port, () => {
   controlServer.listen(config.controlPort, '127.0.0.1', async () => {
@@ -307,10 +365,14 @@ publicServer.listen(config.port, () => {
     log(`Control API     http://127.0.0.1:${config.controlPort}  (local only)`);
     log(`Voice engine    ${config.voiceEngine === 'realtime' ? config.realtimeModel : config.liveModel}, voice ${config.voice}`);
     log(`Brain           ${config.brain.mode}${config.brain.mode === 'agent' ? ` (fallback: ${config.brain.fallback} after ${config.brain.timeoutSeconds}s)` : ''}`);
+    log(`Agent           ${config.agentName}, ${config.ownerName}'s AI agent | persona: ${fs.existsSync(config.personaFile) ? config.personaFile : 'default (no persona.md)'}`);
     try {
       const pub = await publicUrl();
       log(`Public URL      ${pub}`);
       log(`Inbound webhook ${pub}/twilio/voice   (npm run twilio:connect sets it)`);
+      if (/\d+-\d+-\d+-\d+\.ngrok/.test(pub)) {
+        log('privacy: this ngrok address contains your public IP. Don\'t show or share it; set NGROK_DOMAIN to a free static domain instead.');
+      }
     } catch (e) {
       log(`Public URL      not found yet: ${e.message}`);
     }

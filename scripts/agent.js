@@ -12,10 +12,20 @@
 //   npm run calls                      list calls
 //   npm run transcript -- <callId>     full record of one call
 //   npm run status                     engine, brain, URLs, allowlists
+import fs from 'node:fs';
 import { config } from '../src/config.js';
 
 const BASE = `http://127.0.0.1:${config.controlPort}`;
 const [cmd, ...rest] = process.argv.slice(2);
+
+// The running server writes a fresh secret here each time it starts.
+function token() {
+  try {
+    return fs.readFileSync('data/control-token', 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
 
 function flags(args) {
   const out = { _: [] };
@@ -35,7 +45,7 @@ async function api(method, path, body) {
   try {
     res = await fetch(BASE + path, {
       method,
-      headers: body ? { 'Content-Type': 'application/json' } : {},
+      headers: { 'X-Control-Token': token(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -60,7 +70,8 @@ async function watch() {
   let warned = false;
   for (;;) {
     try {
-      const res = await fetch(`${BASE}/events?since=${since}&boot=${boot}`);
+      const res = await fetch(`${BASE}/events?since=${since}&boot=${boot}`, { headers: { 'X-Control-Token': token() } });
+      if (res.status === 401) throw new Error('token');
       const newBoot = res.headers.get('x-boot-id') || '';
       if (newBoot !== boot) since = 0; // server restarted: its event numbers start over
       boot = newBoot;
@@ -83,7 +94,7 @@ async function watch() {
         }
       }
     } catch {
-      if (!warned) console.error('(waiting for server…)');
+      if (!warned) console.error('(waiting for the server: is npm run up running in this project folder?)');
       warned = true;
     }
     await new Promise((r) => setTimeout(r, 2000));

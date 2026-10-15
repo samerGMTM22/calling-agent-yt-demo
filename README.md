@@ -7,12 +7,16 @@ Let your AI agent (Claude Code, Codex, or any agent that can run commands) **mak
 - 🗣️ **Voice:** OpenAI **GPT-Live** (`gpt-live-1`), a full-duplex voice model that sounds natural, handles interruptions, and speaks Arabic and English.
 - 🧠 **Brain:** **your agent**. It decides who to call and why, answers questions live during the call, steers it, and reads the transcript afterwards.
 - ☎️ **Line:** **Twilio** phone number + Media Streams.
-- 🔐 **Safe by default:** caller and destination allowlists, mandatory AI disclosure, verified webhooks, one-time stream tokens, cost caps, secrets never committed.
+- 🔐 **Safe by default:** caller and destination allowlists, optional keypad PIN, mandatory AI disclosure, verified webhooks, one-time stream tokens, cost caps, secrets never committed.
 
 > Built for a live demo on the **Thaka2.ai (ذكاء)** YouTube channel: AI explained for the Arabic-speaking world.
 > 👉 **[Subscribe on YouTube](https://www.youtube.com/@Thakaa-AI)** · 🌐 **[thaka2.ai](https://www.thaka2.ai)**
 
 ---
+
+## 👋 New to all this?
+
+Start with **[Step 0: Start here](docs/en/00-start-here.md)**: what you need, what it costs, how to open a terminal, how to edit `.env`, and a copy-paste prompt for your AI agent. No coding experience needed.
 
 ## 🤖 Using an AI agent to set this up?
 
@@ -61,6 +65,7 @@ Full walkthrough: **[Step 4: Run it and call](docs/en/04-run-and-call.md)**
 
 ## Step-by-step guides
 
+0. [**Start here**: for non-technical users](docs/en/00-start-here.md)
 1. [OpenAI: account, billing, API key](docs/en/01-openai.md)
 2. [Twilio: account, number, API key, geo permissions](docs/en/02-twilio.md)
 3. [Node.js, Git and ngrok](docs/en/03-ngrok.md)
@@ -68,14 +73,18 @@ Full walkthrough: **[Step 4: Run it and call](docs/en/04-run-and-call.md)**
 5. [**Security and compliance**](docs/en/05-security-and-compliance.md) ⚠️ read before sharing your number
 6. [How it works](docs/en/06-how-it-works.md)
 7. [Troubleshooting](docs/en/07-troubleshooting.md)
+8. [Customize the persona: name, voice, language, personality](docs/en/08-customize-persona.md)
 
 ## 🔐 Security at a glance
 
 - **Only your number can call the agent** (`ALLOWED_CALLERS`). Others are rejected before the call is answered. Add a [Twilio-level gate](examples/twilio-gate-function.js) so it holds even when your server is off.
+- **Optional keypad PIN** (`INBOUND_PIN`): callers must type it before the agent answers, so a faked caller ID isn't enough.
 - **The agent can only call numbers you approved** (`ALLOWED_DESTINATIONS`).
 - **It always introduces itself as your AI agent** and never claims to be human. Keep it that way; in many countries, including under US FCC rules, AI voice calls need disclosure and consent.
 - **Secrets live only in `.env`**, which is git-ignored. `.env.example` is the template.
 - **Cost caps:** max call length and max concurrent calls.
+- **Local control stays local:** the API your agent uses listens on `127.0.0.1` only, refuses browsers and needs a fresh per-run token.
+- **Privacy on screen:** phone numbers are masked in all output, and the server warns you if your ngrok address reveals your IP.
 
 More: [Security and compliance](docs/en/05-security-and-compliance.md).
 
@@ -96,7 +105,13 @@ More: [Security and compliance](docs/en/05-security-and-compliance.md).
 
 ## Fork it and make it yours
 
-This is a template. Fork it, add your own keys to `.env` (never to the code), change `AGENT_NAME`, `OWNER_NAME` and the persona in `src/persona.js`, and ask your agent to call you.
+This is a template. Fork it, add your own keys to `.env` (never to the code), and make the agent yours:
+
+- `AGENT_NAME`, `OWNER_NAME`, `AGENT_LANGUAGE`, `OPENAI_VOICE` in `.env`
+- personality, dialect, facts about you and house rules in **`persona.md`** (copy [`persona.example.md`](persona.example.md); it stays on your computer)
+- per call: `--purpose`, `--context`, `--language`
+
+Full guide: **[Customize the persona](docs/en/08-customize-persona.md)**. Then ask your agent to call you.
 
 ## License
 

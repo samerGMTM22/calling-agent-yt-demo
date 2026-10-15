@@ -27,7 +27,10 @@ GPT-Live supports **client delegation**: when it needs reasoning, facts or tools
 
 **Inbound**:
 1. Twilio POSTs to `/twilio/voice`. The server verifies the request is genuine and the caller is in `ALLOWED_CALLERS`, otherwise it returns `<Reject>`.
-2. It answers with the same `<Connect><Stream>` TwiML, and steps 3–4 above follow.
+2. If `INBOUND_PIN` is set, it answers with `<Gather>`: the caller types the PIN on the keypad (3 tries, then goodbye). Twilio posts the digits to `/twilio/pin`, which runs the same checks again.
+3. It answers with the same `<Connect><Stream>` TwiML, and steps 3–4 above follow.
+
+**Ending a call:** the voice model cannot hang up by itself. When the caller says goodbye, it delegates; the brain answers with `--hangup` (or the fallback brain adds a hang-up marker), the goodbye is spoken, and the server ends the call. `MAX_CALL_SECONDS` is the hard stop.
 
 ## Audio path
 
@@ -39,11 +42,11 @@ The alternative engine (`VOICE_ENGINE=realtime`, `gpt-realtime-2.1`) is turn-bas
 
 | File | Role |
 |---|---|
-| `src/server.js` | Public webhooks + media WebSocket, local control API |
+| `src/server.js` | Public webhooks, PIN gate, media WebSocket, local control API (token-protected) |
 | `src/engines/live.js` | GPT-Live bridge + delegation |
 | `src/engines/realtime.js` | gpt-realtime bridge + function tools + barge-in |
 | `src/brain.js` | agent / openai / anthropic / none brains, timeout + fallback |
-| `src/persona.js` | Instructions, AI disclosure, greeting, safety rules |
+| `src/persona.js` | Instructions, `persona.md` loading, AI disclosure, greeting, safety rules |
 | `src/twilio.js` | Twilio REST, TwiML, webhook verification |
 | `src/calls.js` | Call registry, event feed, transcripts |
 | `scripts/agent.js` | CLI for agents: call, watch, answer, say, note, hangup… |

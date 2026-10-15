@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { config } from './config.js';
+import { config, maskPhone } from './config.js';
 
 const CALLS_DIR = path.resolve('calls');
 
@@ -88,13 +88,14 @@ export function endCall(call, reason = 'ended') {
 export function saveCall(call) {
   if (!config.saveTranscripts) return;
   fs.mkdirSync(CALLS_DIR, { recursive: true });
-  const { streamToken, ...safe } = call;
+  const { streamToken, _maxTimer, ...safe } = call;
   const file = path.join(CALLS_DIR, `${call.createdAt.slice(0, 10)}_${call.id}.json`);
   fs.writeFileSync(file, JSON.stringify(safe, null, 2));
 }
 
-// Public view used by the control API (never includes the stream token).
+// View used by the control API: no stream token, and phone numbers masked so they
+// don't end up on screen recordings. Full numbers stay only in ./calls (git-ignored).
 export function publicCall(call) {
-  const { streamToken, streamTokenExpiresAt, ...rest } = call;
-  return rest;
+  const { streamToken, streamTokenExpiresAt, _maxTimer, ...rest } = call;
+  return { ...rest, from: maskPhone(call.from), to: maskPhone(call.to) };
 }

@@ -2,23 +2,48 @@
 // Checks your setup step by step and tells you exactly what to fix.
 //   npm run doctor
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { config, configProblems, configWarnings, maskPhone } from '../src/config.js';
 
 let failures = 0;
 const ok = (msg) => console.log(`  ✅ ${msg}`);
 const bad = (msg, fix) => { failures += 1; console.log(`  ❌ ${msg}${fix ? `\n     → ${fix}` : ''}`); };
 const warn = (msg) => console.log(`  ⚠️  ${msg}`);
+const skip = (msg) => console.log(`  ⏭️  ${msg}`);
+
+// Some libraries throw outside their promises; show a plain message instead of a stack trace.
+process.on('uncaughtException', (err) => {
+  bad(`unexpected error: ${err.message}`, 'Re-check the values in .env, then run npm run doctor again.');
+  console.log(`\n${failures} problem(s) to fix.\n`);
+  process.exit(1);
+});
 
 console.log('\n1) .env file');
 if (!fs.existsSync('.env')) bad('.env not found', 'Run: cp .env.example .env   then fill in your keys.');
 else ok('.env exists');
+// Your keys must never reach GitHub: .env has to be ignored and never committed.
+try {
+  execFileSync('git', ['check-ignore', '-q', '.env'], { stdio: 'ignore' });
+  ok('.env is git-ignored (your keys stay on this computer)');
+  try {
+    execFileSync('git', ['ls-files', '--error-unmatch', '.env'], { stdio: 'ignore' });
+    bad('.env is tracked by git!', 'Run: git rm --cached .env   then rotate every key in it (they may already be public).');
+  } catch { /* not tracked: good */ }
+} catch {
+  if (fs.existsSync('.git')) bad('.env is NOT git-ignored', 'Add a line ".env" to .gitignore before you commit anything.');
+}
 for (const w of configWarnings()) warn(w);
 const problems = configProblems();
 if (problems.length) problems.forEach((p) => bad(p, 'Edit .env (see docs/en/01-openai.md and docs/en/02-twilio.md).'));
 else ok('required keys look well-formed');
 
+const openaiReady = config.openaiApiKey.startsWith('sk-');
+const twilioReady = /^AC[0-9a-f]{32}$/.test(config.twilio.accountSid)
+  && /^SK[0-9a-f]{32}$/.test(config.twilio.apiKeySid) && Boolean(config.twilio.apiKeySecret);
+
 console.log('\n2) OpenAI');
-try {
+if (!openaiReady) skip('skipped: add OPENAI_API_KEY to .env first (docs/en/01-openai.md).');
+else try {
   for (const model of [config.voiceEngine === 'realtime' ? config.realtimeModel : config.liveModel, config.brain.openaiModel]) {
     const r = await fetch(`https://api.openai.com/v1/models/${model}`, { headers: { Authorization: `Bearer ${config.openaiApiKey}` } });
     if (r.ok) ok(`model ${model} is available to your key`);
@@ -28,7 +53,8 @@ try {
 } catch (e) { bad(`OpenAI unreachable: ${e.message}`); }
 
 console.log('\n3) Twilio');
-try {
+if (!twilioReady) skip('skipped: add the three TWILIO_ keys to .env first (docs/en/02-twilio.md).');
+else try {
   const { client, ourNumber } = await import('../src/twilio.js');
   const numbers = await client.incomingPhoneNumbers.list({ limit: 20 });
   ok(`API key works; ${numbers.length} phone number(s) in the account`);
@@ -43,15 +69,26 @@ if (config.allowedCallers.includes('*')) warn('ALLOWED_CALLERS=* → anyone can 
 else ok(`inbound allowlist: ${config.allowedCallers.map(maskPhone).join(', ') || '(empty: all inbound rejected)'}`);
 if (config.allowedDestinations.includes('*')) warn('ALLOWED_DESTINATIONS=* → the agent may call any number.');
 else ok(`outbound allowlist: ${config.allowedDestinations.map(maskPhone).join(', ') || '(empty: no outbound calls)'}`);
+if (config.inboundPin) ok('INBOUND_PIN set: callers must type the PIN before the agent answers');
+else if (!config.allowedCallers.includes('*')) warn('INBOUND_PIN not set → caller ID alone protects inbound calls (it can be faked). Set a 4-10 digit PIN for extra safety.');
+else bad('ALLOWED_CALLERS=* without INBOUND_PIN → anyone can talk to your agent', 'Set INBOUND_PIN, or put your number in ALLOWED_CALLERS.');
 if (!config.twilio.authToken) warn('TWILIO_AUTH_TOKEN not set → webhooks are verified through the Twilio API instead of signatures (fine, slightly slower).');
 
-console.log('\n5) Public tunnel (ngrok)');
+console.log('\n5) Persona');
+ok(`agent introduces itself as "${config.agentName}, ${config.ownerName}'s AI agent"`);
+if (config.ownerName === 'Your Name') warn('OWNER_NAME is still "Your Name" → set your real name in .env.');
+if (fs.existsSync(config.personaFile)) ok(`persona file found: ${config.personaFile}`);
+else warn(`no persona file (${config.personaFile}) → default personality. Optional: cp persona.example.md persona.md`);
+
+console.log('\n6) Public tunnel (ngrok)');
 try {
   const r = await fetch('http://127.0.0.1:4040/api/tunnels');
   const { tunnels } = await r.json();
   const t = tunnels.find((x) => x.public_url?.startsWith('https://'));
-  if (t) ok(`ngrok running: ${t.public_url} → ${t.config?.addr}`);
+  if (t) ok(`ngrok running → ${t.config?.addr}`);
   else warn('ngrok running but no https tunnel found');
+  // Random free ngrok URLs look like 1a2b-203-0-113-10.ngrok-free.app: that's your public IP address.
+  if (t && /\d+-\d+-\d+-\d+\.ngrok/.test(t.public_url)) warn('your ngrok URL contains your public IP address → don\'t show it on screen. A free static domain (NGROK_DOMAIN) avoids this (docs/en/03-ngrok.md).');
 } catch {
   if (config.publicUrl) ok(`PUBLIC_URL set: ${config.publicUrl}`);
   else warn('ngrok is not running yet (npm run up starts it for you).');

@@ -23,6 +23,14 @@ AGENT_LANGUAGE=auto      # auto | ar | en
 
 The agent will always open with: *"Hi, this is Sam, Samer's AI agent…"*
 
+Recommended: a keypad PIN for calls **to** the agent. Pick 4–10 digits that only you know (not your birthday, not `1234`) and write them after the `=`:
+
+```
+INBOUND_PIN=
+```
+
+Want to change the voice, dialect or personality? See [Step 8: Customize the persona](08-customize-persona.md).
+
 ## 4.2 Check everything
 
 ```bash
@@ -40,9 +48,12 @@ npm run up
 This starts ngrok (if not already running) and the server. Keep this terminal open. You will see something like:
 
 ```
+Agent           Sam, Samer's AI agent | persona: persona.md
 Public URL      https://my-agent.ngrok-free.app
 Inbound webhook https://my-agent.ngrok-free.app/twilio/voice
 ```
+
+> 🎥 Recording your screen? A random ngrok address like `1a2b-203-0-113-10.ngrok-free.app` contains your IP address. Hide this terminal, or use a free static domain (`NGROK_DOMAIN`, [Step 3.4](03-ngrok.md#34-optional-a-free-static-domain-recommended)).
 
 ## 4.4 Let the agent call you (outbound)
 
@@ -71,7 +82,7 @@ npm run twilio:connect            # shows the current setting, changes nothing
 npm run twilio:connect -- --apply # points the number at this server (saves a backup)
 ```
 
-Now call your Twilio number **from your own phone**. Calls from any number not in `ALLOWED_CALLERS` are rejected before they are answered.
+Now call your Twilio number **from your own phone**. Calls from any number not in `ALLOWED_CALLERS` are rejected before they are answered. If you set `INBOUND_PIN`, you'll hear "Please enter your PIN": type it on the keypad (3 tries).
 
 To put the previous setting back: `npm run twilio:connect -- --restore`.
 
@@ -105,6 +116,10 @@ npm run status                      # engine, brain, URLs, allowlists
 ```
 
 Transcripts are saved in `./calls/` (git-ignored).
+
+**Hanging up:** say "goodbye" or "you can hang up". The voice says goodbye and asks the brain, which hangs up (answer with `--hangup` if you are the brain). You can always just hang up your phone.
+
+> The `npm run` commands talk to the server with a secret token it writes to `data/control-token` at every start. Run them from the project folder. If you get `401`, the server restarted or you are in another folder.
 
 ## 4.7 Choose the voice engine and brain
 
