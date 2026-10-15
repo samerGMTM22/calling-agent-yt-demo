@@ -21,6 +21,7 @@ import { createLiveEngine } from './engines/live.js';
 import { createRealtimeEngine } from './engines/realtime.js';
 
 const engines = new Map(); // callId -> engine
+const BOOT_ID = Date.now().toString(36);
 
 function log(...args) {
   console.log(new Date().toISOString().slice(11, 19), ...args);
@@ -262,8 +263,9 @@ async function handleControl(req, res, url) {
 
   // Newline-delimited JSON event stream (one event per line), for `npm run watch`.
   if (req.method === 'GET' && url.pathname === '/events') {
-    res.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-cache' });
-    const since = Number(url.searchParams.get('since') || 0);
+    res.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-cache', 'X-Boot-Id': BOOT_ID });
+    // `since` only makes sense for the same server run; after a restart, replay everything.
+    const since = url.searchParams.get('boot') === BOOT_ID ? Number(url.searchParams.get('since') || 0) : 0;
     for (const e of eventsSince(since)) res.write(`${JSON.stringify(e)}\n`);
     const onEvent = (e) => res.write(`${JSON.stringify(e)}\n`);
     bus.on('event', onEvent);

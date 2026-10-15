@@ -56,9 +56,15 @@ const print = (x) => console.log(typeof x === 'string' ? x : JSON.stringify(x, n
 
 async function watch() {
   let since = 0;
+  let boot = '';
+  let warned = false;
   for (;;) {
     try {
-      const res = await fetch(`${BASE}/events?since=${since}`);
+      const res = await fetch(`${BASE}/events?since=${since}&boot=${boot}`);
+      const newBoot = res.headers.get('x-boot-id') || '';
+      if (newBoot !== boot) since = 0; // server restarted: its event numbers start over
+      boot = newBoot;
+      warned = false;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = '';
@@ -77,7 +83,8 @@ async function watch() {
         }
       }
     } catch {
-      console.error('(waiting for server…)');
+      if (!warned) console.error('(waiting for server…)');
+      warned = true;
     }
     await new Promise((r) => setTimeout(r, 2000));
   }
