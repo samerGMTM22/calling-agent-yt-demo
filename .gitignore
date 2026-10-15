@@ -1,0 +1,13 @@
+# Secrets: never commit these
+.env
+.env.*
+!.env.example
+
+# Runtime data (call transcripts can contain personal info)
+calls/
+data/
+*.log
+
+# Dependencies / OS
+node_modules/
+.DS_Store

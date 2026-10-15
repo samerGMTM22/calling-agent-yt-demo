@@ -1,0 +1,37 @@
+{
+  "name": "calling-agent-yt-demo",
+  "version": "1.0.0",
+  "scripts": {
+    "up": "node scripts/up.js",
+    "start": "node src/server.js",
+    "tunnel": "ngrok http 3000",
+    "doctor": "node scripts/doctor.js",
+    "twilio:connect": "node scripts/twilio-connect.js",
+    "call": "node scripts/agent.js call",
+    "watch": "node scripts/agent.js watch",
+    "answer": "node scripts/agent.js answer",
+    "say": "node scripts/agent.js say",
+    "note": "node scripts/agent.js note",
+    "hangup": "node scripts/agent.js hangup",
+    "calls": "node scripts/agent.js calls",
+    "transcript": "node scripts/agent.js transcript",
+    "status": "node scripts/agent.js status",
+    "check": "node --check src/server.js && node --check scripts/agent.js && node --check scripts/doctor.js && node --check scripts/twilio-connect.js && node --check scripts/up.js"
+  },
+  "license": "MIT",
+  "description": "Let your AI agent (Claude Code, Codex, ...) make and take real phone calls: Twilio for the line, OpenAI GPT-Live for the voice, your agent as the brain.",
+  "type": "module",
+  "private": "true",
+  "dependencies": {
+    "dotenv": "^18.0.8",
+    "twilio": "^6.2.0",
+    "ws": "^8.22.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/samerGMTM22/calling-agent-yt-demo.git"
+  }
+}
